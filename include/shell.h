@@ -34,11 +34,13 @@ void ShellLoop();
 
 char *ShellRead();
 
+int ShellInstructParse(char *line, char ***instructions);
+
 char **ShellParse(char *line);
 
 int ShellLaunch(char **tokens);
 
-int ShellExecute(char **tokens, char *origin_line);
+int ShellExecute(int i_pipe, char **instructions, int num_instruction, char *origin_line);
 
 void HistoryClear();
 
@@ -49,5 +51,7 @@ void InputBufferInsert(char *line);
 void ChildProcsInsert(pid_t cpid);
 
 void ChildProcsRemove(Node *node);
+
+void PipeHandler(int i_pipe, char **instructions, int num_instruction, char *origin_line);
 
 #endif

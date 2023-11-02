@@ -127,26 +127,6 @@ int ShellMypid(char **args) {
         }
         printf("%s\n", token);
     } else if (strcmp(args[1], "-c") == 0) {
-        {
-//            // fast look for the shell's child
-//            int status;
-//            Node *curr = childProcsList.head, *prev = NULL;
-//            while (curr != NULL) {
-//                pid_t wpid = waitpid(curr->pid, &status, WNOHANG);
-//                prev = curr;
-//                curr = curr->next;
-//                if (wpid == 0) {
-//                    // wpid not finish yet
-//                    printf("%d\n", prev->pid);
-//                } else {
-//                    // wpid finished
-//                    ChildProcsRemove(prev);
-//                }
-//            }
-//            if (childProcsList.sz == 0) {
-//                printf("Empty\n");
-//            }
-        }
         if (args[2] != NULL) {
             target_pid = strtol(args[2], &endptr, 10);
             if (*endptr != '\0') {

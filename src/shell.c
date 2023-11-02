@@ -1,4 +1,5 @@
 #include "../include/shell.h"
+#include "command.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,10 +7,11 @@
 #include <stdbool.h>
 #include <sys/wait.h>
 
+List childProcsList;
+
 int histoty_recent_index = -1;
 char *history[HISTORY_SIZE];
 char *input_buffer[1];  // insert by replay
-List childProcsList;
 
 // loacl variable
 bool isBackground = false;
@@ -32,22 +34,26 @@ void ShellInit() {
 
 void ShellLoop() {
     char *line, *origin_line;
-    char **tokens;
-    int status;
+    char **instructions;
+    int status, num_instruction;
 
     do {
         printf(">>> $");
         line = ShellRead();
         origin_line = strdup(line);
-        tokens = ShellParse(line);
-        status = ShellExecute(tokens, origin_line);
+        num_instruction = ShellInstructParse(line, &instructions);
+        if ((num_instruction == 1 || num_instruction == 0) &&
+            (instructions[0] == NULL || strcmp(instructions[0], "") == 0 || strcmp(instructions[0], " ") == 0 ||
+             strcmp(instructions[0], "\t") == 0)) {
+            continue;
+        }
+
+        status = ShellExecute(0, instructions, num_instruction, origin_line);
 
         free(line);
         free(origin_line);
-        free(tokens);
+        free(instructions);
     } while (status);
-
-
 }
 
 char *ShellRead() {
@@ -73,36 +79,26 @@ char *ShellRead() {
     return buffer;
 }
 
-char **ShellParse(char *line) {
-    int bufsize = BUFFER_SIZE, cnt = 0;
-    char **tokens = malloc(BUFFER_SIZE * sizeof(tokens[0]));
-    if (!tokens) {
-        fprintf(stderr, "ShellParse: allocation error\n");
-        exit(EXIT_FAILURE);
-    }
+int ShellInstructParse(char *line, char ***instructions) {
+    int cnt = split_line(line, "|", instructions);
 
-    char *token;
-    char *rest_of_str = NULL;
-    token = strtok_r(line, TOK_DELIM, &rest_of_str);
-    while (token != NULL) {
-        tokens[cnt++] = token;
-        if (cnt >= bufsize) {
-            bufsize += BUFFER_SIZE;
-            tokens = realloc(tokens, bufsize * sizeof(tokens[0]));
-            if (!tokens) {
-                fprintf(stderr, "ShellParse: allocation error\n");
-                exit(EXIT_FAILURE);
-            }
+    isBackground = false;
+    if (cnt > 0) {
+        int last_str_len = strlen((*instructions)[cnt - 1]);
+        if ((*instructions)[cnt - 1][last_str_len - 1] == '&') {
+            isBackground = true;
+            (*instructions)[cnt - 1][last_str_len - 2] = '\0';
         }
-        token = strtok_r(rest_of_str, TOK_DELIM, &rest_of_str);
     }
-    if (cnt > 0 && tokens[cnt - 1][0] == '&') {
-        isBackground = true;
-        tokens[cnt - 1] = NULL;
-    } else {
-        isBackground = false;
-        tokens[cnt] = NULL;
-    }
+    (*instructions)[cnt] = NULL;
+    return cnt;
+}
+
+char **ShellParse(char *line) {
+    char **tokens;
+    int cnt = split_line(line, TOK_DELIM, &tokens);
+
+    tokens[cnt] = NULL;
     return tokens;
 }
 
@@ -127,18 +123,15 @@ int ShellLaunch(char **tokens) {
             } while (!WIFEXITED(status) && !WIFSIGNALED(status));
         } else {
             printf("[Pid]: %d\n", pid);
-//            ChildProcsInsert(pid);
         }
     }
     return 1; // we can allow the input again
 }
 
-int ShellExecute(char **tokens, char *origin_line) {
-    if (tokens[0] == NULL || strcmp(tokens[0], "") == 0 || strcmp(tokens[0], " ") == 0 ||
-        strcmp(tokens[0], "\t") == 0) {
-        return 1;
-    }
+int ShellExecute(int i_pipe, char **instructions, int num_instruction, char *origin_line) {
+    char **tokens = ShellParse(instructions[i_pipe]);
 
+    PipeHandler(i_pipe, instructions, num_instruction, origin_line);
     if (strcmp(tokens[0], "replay") != 0) {
         HistoryInsert(origin_line);
     }
@@ -158,6 +151,9 @@ void HistoryClear() {
 }
 
 void HistoryInsert(char *line) {
+    if (line == NULL)
+        return;
+
     int curr = (histoty_recent_index + 1) % HISTORY_SIZE;
     if (history[curr] != NULL) {
         free(history[curr]);
@@ -200,6 +196,32 @@ void ChildProcsRemove(Node *node) {
     }
 }
 
+void PipeHandler(int i_pipe, char **instructions, int num_instruction, char *origin_line) {
+    if (instructions[i_pipe + 1] != NULL) {
+        int pipeFd[2];
+        if (pipe(pipeFd) < 0)
+            perror("PipeHandler: pipe create error");
+        pid_t cpid = fork();
+        if (cpid == 0) {
+            // child process
+            close(pipeFd[1]);
+            dup2(pipeFd[0], STDIN_FILENO);
+            close(pipeFd[0]);
 
+            ShellExecute(i_pipe + 1, instructions, num_instruction, origin_line);
+        } else if (cpid < 0) {
+            perror("ShellLaunch: fork failed");
+        } else {
+            // parent process
+            close(pipeFd[0]);
+            dup2(pipeFd[1], STDOUT_FILENO);
+            close(pipeFd[1]);
+
+//            if(i_pipe == 0){
+//                dup2()
+//            }
+        }
+    }
+}
 
 
